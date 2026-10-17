@@ -662,7 +662,15 @@
     if (!alvo) return;
 
     if (alvo.hasAttribute("data-jogada")) {
-      estado.jogada[alvo.getAttribute("data-jogada")] = alvo.getAttribute("data-tipo");
+      var quem = alvo.getAttribute("data-jogada");
+      var tipo = alvo.getAttribute("data-tipo");
+      if (tipo === "ganhou") {
+        // só um ganhador por rodada: marcar outro desmarca o anterior
+        Object.keys(estado.jogada).forEach(function (outro) {
+          if (outro !== quem && estado.jogada[outro] === "ganhou") delete estado.jogada[outro];
+        });
+      }
+      estado.jogada[quem] = tipo;
       ver();
     } else if (alvo.hasAttribute("data-remover")) {
       lerConfig();
