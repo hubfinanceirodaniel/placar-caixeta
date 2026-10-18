@@ -103,7 +103,8 @@
     border-radius: var(--raio);
     padding: 12px 14px 12px;
   }
-  .carta.fora { opacity: .5; }
+  .carta.fora, .carta.saiu { opacity: .5; }
+  .carta.saiu .nome { text-decoration: line-through; text-decoration-color: var(--osso-fraco); }
   .carta.campea { border-color: var(--latao); box-shadow: 0 0 0 1px var(--latao) inset; }
   .carta.campea .pontos { color: var(--latao); }
 
@@ -132,25 +133,25 @@
     padding: 3px 9px; border-radius: 99px;
   }
   .etiqueta.fora { background: var(--copas-fundo); color: var(--copas); }
+  .etiqueta.saiu { background: #2C3A33; color: var(--osso-fraco); }
   .etiqueta.campea { background: var(--latao-fundo); color: var(--latao); }
 
-  .escolhas {
-    display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
-    margin-top: 12px;
-  }
-  .escolha {
-    min-height: 58px; border-radius: 10px;
-    border: 1px solid var(--linha);
+  .vai {
+    width: 100%; min-height: 58px; margin-top: 12px;
+    border-radius: 10px; border: 1px solid var(--linha);
     color: var(--osso-fraco);
-    font-size: 12.5px; font-weight: 600; line-height: 1.15;
+    font-size: 16px; font-weight: 700; line-height: 1.15;
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
     transition: background .12s ease, color .12s ease, border-color .12s ease;
   }
-  .escolha b { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
-  .escolha[aria-pressed="true"] { color: var(--osso); border-color: transparent; }
-  .escolha.naoFoi[aria-pressed="true"] { background: #2C3A33; }
-  .escolha.ganhou[aria-pressed="true"] { background: var(--latao); color: #241B06; }
-  .escolha.foiPerdeu[aria-pressed="true"] { background: var(--copas); color: #FFF1EE; }
+  .vai small {
+    font-size: 11.5px; font-weight: 600;
+    font-variant-numeric: tabular-nums; letter-spacing: .01em;
+  }
+  .vai[aria-pressed="true"] {
+    background: var(--latao); color: #241B06; border-color: transparent;
+  }
+  .vai[aria-pressed="true"] small { color: #50400F; }
 
   /* ---------- faixa de campeão ---------- */
   .campeao {
@@ -319,7 +320,7 @@
   }
 
   function jogador(nome) {
-    return { id: id(), nome: nome, pontos: 0, fora: false };
+    return { id: id(), nome: nome, pontos: 0, fora: false, desistiu: false };
   }
 
   function inicial() {
@@ -328,7 +329,7 @@
       regras: { inicial: 10, naoFoi: 1, ganhou: 0, foiPerdeu: 2 },
       jogadores: [jogador("Jogador 1"), jogador("Jogador 2"), jogador("Jogador 3")],
       rodadas: [],
-      jogada: {}
+      vao: {}
     };
   }
 
@@ -342,12 +343,29 @@
       if (!bruto) return null;
       var lido = JSON.parse(bruto);
       if (!lido || !Array.isArray(lido.jogadores) || !lido.regras) return null;
+      // jogo salvo pelo formato antigo (três botões por jogador) vira "quem vai"
+      if (!lido.vao) {
+        lido.vao = {};
+        if (lido.jogada) {
+          Object.keys(lido.jogada).forEach(function (idJogador) {
+            if (lido.jogada[idJogador] !== "naoFoi") lido.vao[idJogador] = true;
+          });
+        }
+      }
+      delete lido.jogada;
+      lido.jogadores.forEach(function (j) {
+        if (typeof j.desistiu !== "boolean") j.desistiu = false;
+      });
       return lido;
     } catch (e) { return null; }
   }
 
   function ativos() {
-    return estado.jogadores.filter(function (j) { return !j.fora; });
+    return estado.jogadores.filter(function (j) { return !j.fora && !j.desistiu; });
+  }
+
+  function quemVai() {
+    return ativos().filter(function (j) { return estado.vao[j.id]; });
   }
 
   function campeao() {
@@ -355,8 +373,10 @@
     var vivos = ativos();
     if (vivos.length === 1) return [vivos[0]];
     if (vivos.length === 0) {
-      var topo = Math.max.apply(null, estado.jogadores.map(function (j) { return j.pontos; }));
-      return estado.jogadores.filter(function (j) { return j.pontos === topo; });
+      var candidatos = estado.jogadores.filter(function (j) { return !j.desistiu; });
+      if (!candidatos.length) return null;
+      var topo = Math.max.apply(null, candidatos.map(function (j) { return j.pontos; }));
+      return candidatos.filter(function (j) { return j.pontos === topo; });
     }
     return null;
   }
@@ -430,29 +450,32 @@
     } else {
       html += '<div class="selo">' +
         '<div class="naipe' + (naipe === NAIPES[1] || naipe === NAIPES[2] ? " vermelho" : "") + '">' + naipe + "</div>" +
-        "<div>Rodada " + numero + "<em>Marque o que cada um fez e salve</em></div>" +
+        "<div>Rodada " + numero + "<em>Marque quem vai nesta rodada</em></div>" +
         "</div>";
     }
 
     html += '<div class="lista">' + estado.jogadores.map(function (j) {
       var venceu = vencedores && vencedores.indexOf(j) !== -1;
-      var linha = '<div class="carta' + (j.fora ? " fora" : "") + (venceu ? " campea" : "") + '">' +
+      var linha = '<div class="carta' + (j.fora ? " fora" : "") + (j.desistiu ? " saiu" : "") +
+        (venceu ? " campea" : "") + '">' +
         '<div class="cabeca">' +
           '<div class="quem"><div class="nome">' + esc(j.nome) + "</div>" +
           (j.fora ? '<span class="etiqueta fora">Fora</span>' : "") +
+          (j.desistiu ? '<span class="etiqueta saiu">Desistiu</span>' : "") +
           (venceu ? '<span class="etiqueta campea">Campeão</span>' : "") +
           "</div>" +
           '<div class="pontos' + (pulsar[j.id] ? " mudou" : "") + '">' + j.pontos +
             "<small>pontos</small></div>" +
         "</div>";
 
-      if (!j.fora && !vencedores) {
-        linha += '<div class="escolhas">' + TIPOS.map(function (t) {
-          var marcado = (estado.jogada[j.id] || "naoFoi") === t.chave;
-          return '<button class="escolha ' + t.chave + '" aria-pressed="' + marcado + '" ' +
-            'data-jogada="' + j.id + '" data-tipo="' + t.chave + '">' +
-            "<span>" + t.curto + "</span><b>" + sinal(estado.regras[t.chave]) + "</b></button>";
-        }).join("") + "</div>";
+      if (!j.fora && !j.desistiu && !vencedores) {
+        var vai = !!estado.vao[j.id];
+        linha += '<button class="vai" aria-pressed="' + vai + '" data-vai="' + j.id + '">' +
+          (vai ? "Vai" : "Não vai") +
+          "<small>" + (vai
+            ? sinal(estado.regras.ganhou) + " se ganhar · " + sinal(estado.regras.foiPerdeu) + " se perder"
+            : sinal(estado.regras.naoFoi) + " de qualquer jeito") +
+          "</small></button>";
       }
 
       return linha + "</div>";
@@ -481,7 +504,9 @@
     }
 
     rodape.hidden = false;
-    btPrincipal.textContent = vencedores ? "Jogar de novo" : "Salvar rodada";
+    btPrincipal.textContent = vencedores
+      ? "Jogar de novo"
+      : (quemVai().length ? "Quem ganhou?" : "Ninguém foi — salvar rodada");
     btPrincipal.disabled = false;
     btDesfazer.hidden = false;
     btDesfazer.disabled = !estado.rodadas.length;
@@ -521,21 +546,26 @@
       j.nome = j.nome || "Jogador " + (i + 1);
       j.pontos = estado.regras.inicial;
       j.fora = false;
+      j.desistiu = false;
     });
     estado.rodadas = [];
-    estado.jogada = {};
+    estado.vao = {};
     estado.fase = "jogo";
     ver();
   }
 
-  function salvarRodada() {
+  function salvarRodada(ganhador) {
+    ultimaRodadaSalva = Date.now();
+
     var deltas = {};
     var pontosAntes = {};
     var foraAgora = [];
 
     ativos().forEach(function (j) {
-      var tipo = estado.jogada[j.id] || "naoFoi";
-      var perda = estado.regras[tipo];
+      var perda;
+      if (!estado.vao[j.id]) perda = estado.regras.naoFoi;
+      else if (j.id === ganhador) perda = estado.regras.ganhou;
+      else perda = estado.regras.foiPerdeu;
       deltas[j.id] = perda;
       pontosAntes[j.id] = j.pontos;
       if (perda) pulsar[j.id] = true;
@@ -552,9 +582,10 @@
       deltas: deltas,
       pontosAntes: pontosAntes,
       foraAgora: foraAgora,
-      jogada: estado.jogada
+      vao: estado.vao,
+      ganhador: ganhador || null
     });
-    estado.jogada = {};
+    estado.vao = {};
     ver();
   }
 
@@ -566,7 +597,7 @@
       j.pontos = ultima.pontosAntes[j.id];
       if (ultima.foraAgora.indexOf(j.id) !== -1) j.fora = false;
     });
-    estado.jogada = ultima.jogada || {};
+    estado.vao = ultima.vao || {};
     ver();
   }
 
@@ -585,6 +616,7 @@
     abrirFolha(
       '<div class="rotulo">Opções</div>' +
       '<button class="opcao" data-acao="incluir">Incluir jogador agora</button>' +
+      '<button class="opcao" data-acao="desistir">Tirar jogador que desistiu</button>' +
       '<button class="opcao" data-acao="ajustar">Ajustar pontos à mão</button>' +
       '<button class="opcao" data-acao="regras">Ver e mudar as regras</button>' +
       '<button class="opcao" data-acao="reiniciar">Zerar placar com os mesmos jogadores</button>' +
@@ -631,6 +663,33 @@
     );
   }
 
+  function painelGanhador() {
+    abrirFolha(
+      '<div class="rotulo">Quem ganhou</div>' +
+      '<p class="ajuda">Toque em quem levou a rodada — só quem foi aparece aqui. ' +
+      "Escolher o ganhador já salva a rodada.</p>" +
+      quemVai().map(function (j) {
+        return '<button class="opcao" data-ganhador="' + j.id + '">' + esc(j.nome) + "</button>";
+      }).join("") +
+      '<button class="opcao" data-acao="fechar">Cancelar</button>'
+    );
+  }
+
+  function painelDesistir() {
+    var vivos = ativos();
+    abrirFolha(
+      '<div class="rotulo">Tirar quem desistiu</div>' +
+      '<p class="ajuda">Quem sai não entra nas próximas rodadas e não disputa o campeonato. ' +
+      "As rodadas que ele já jogou continuam no histórico.</p>" +
+      (vivos.length
+        ? vivos.map(function (j) {
+            return '<button class="opcao" data-desistiu="' + j.id + '">' + esc(j.nome) + "</button>";
+          }).join("")
+        : '<p class="ajuda">Não há ninguém em jogo.</p>') +
+      '<button class="opcao" data-acao="fechar">Cancelar</button>'
+    );
+  }
+
   function painelConfirma(texto, rotulo, aoConfirmar) {
     aguardandoConfirmacao = aoConfirmar;
     abrirFolha(
@@ -658,19 +717,12 @@
   /* ---------------- eventos ---------------- */
 
   tela.addEventListener("click", function (ev) {
-    var alvo = ev.target.closest("[data-jogada], [data-remover], #btAdicionar");
+    var alvo = ev.target.closest("[data-vai], [data-remover], #btAdicionar");
     if (!alvo) return;
 
-    if (alvo.hasAttribute("data-jogada")) {
-      var quem = alvo.getAttribute("data-jogada");
-      var tipo = alvo.getAttribute("data-tipo");
-      if (tipo === "ganhou") {
-        // só um ganhador por rodada: marcar outro desmarca o anterior
-        Object.keys(estado.jogada).forEach(function (outro) {
-          if (outro !== quem && estado.jogada[outro] === "ganhou") delete estado.jogada[outro];
-        });
-      }
-      estado.jogada[quem] = tipo;
+    if (alvo.hasAttribute("data-vai")) {
+      var quem = alvo.getAttribute("data-vai");
+      if (estado.vao[quem]) delete estado.vao[quem]; else estado.vao[quem] = true;
       ver();
     } else if (alvo.hasAttribute("data-remover")) {
       lerConfig();
@@ -689,10 +741,12 @@
   btPrincipal.addEventListener("click", function () {
     if (estado.fase === "config") return comecar();
     if (campeao()) return comecar();
-    var agora = Date.now();
-    if (agora - ultimaRodadaSalva < 700) return; // dedo bateu duas vezes: vale uma rodada só
-    ultimaRodadaSalva = agora;
-    salvarRodada();
+    // rodada em que alguém foi não fecha sem ganhador
+    if (quemVai().length) return painelGanhador();
+    // a trava de toque duplo vale só aqui: escolher o ganhador no painel já exige
+    // dois toques de propósito, e travá-lo prenderia o painel aberto sem explicação
+    if (Date.now() - ultimaRodadaSalva < 700) return;
+    salvarRodada(null);
   });
 
   btDesfazer.addEventListener("click", desfazer);
@@ -703,6 +757,27 @@
       aguardandoConfirmacao = null;
       fecharFolha();
       ver();
+      return;
+    }
+
+    var escolhido = ev.target.closest("[data-ganhador]");
+    if (escolhido) {
+      fecharFolha();
+      salvarRodada(escolhido.getAttribute("data-ganhador"));
+      return;
+    }
+
+    var saiu = ev.target.closest("[data-desistiu]");
+    if (saiu) {
+      var quemSai = acharJogador(saiu.getAttribute("data-desistiu"));
+      if (quemSai) {
+        painelConfirma(esc(quemSai.nome) + " sai do jogo agora. As rodadas que já jogou continuam no histórico.",
+          "Tirar do jogo", function () {
+            quemSai.desistiu = true;
+            delete estado.vao[quemSai.id];
+            ver();
+          });
+      }
       return;
     }
 
@@ -738,6 +813,8 @@
       painelRegras();
     } else if (qual === "incluir") {
       painelIncluir();
+    } else if (qual === "desistir") {
+      painelDesistir();
     } else if (qual === "confirmarInclusao") {
       var campoNome = document.getElementById("novoNome");
       var campoPontos = document.getElementById("novoPontos");
@@ -757,7 +834,7 @@
         "Começar jogo novo", function () {
           estado.fase = "config";
           estado.rodadas = [];
-          estado.jogada = {};
+          estado.vao = {};
           historicoAberto = false;
           ver();
         });
