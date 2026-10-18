@@ -291,6 +291,13 @@
 (function () {
   "use strict";
 
+  // o navegador guarda o placar por endereço: quem abrir com "www" teria um placar
+  // separado e acharia que a partida sumiu. Endereço único, placar único.
+  if (location.hostname === "www.caixeta.win") {
+    location.replace("https://caixeta.win" + location.pathname + location.search + location.hash);
+    return;
+  }
+
   var CHAVE = "caixeta.placar.v1";
   var NAIPES = ["♠", "♥", "♦", "♣"];
   var TIPOS = [
